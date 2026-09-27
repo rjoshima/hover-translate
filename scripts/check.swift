@@ -11,15 +11,15 @@ check(TextPolicy.candidate("  Hello world.\n") == "Hello world.", "Trim English"
 check(TextPolicy.candidate("日本語の文章です") == nil, "Do not translate Japanese")
 check(TextPolicy.candidate("12345") == nil, "Do not translate numbers")
 check(TextPolicy.candidate(String(repeating: "a", count: 1801)) == nil, "Bound text size")
-var gate = HoverGate()
-check(!gate.ready(x: 10, y: 10, now: 0), "Initial dwell")
-check(!gate.ready(x: 11, y: 10, now: 0.5), "Small jitter")
-check(gate.ready(x: 10, y: 10, now: 0.8), "Dwell complete")
-check(!gate.ready(x: 10, y: 10, now: 2), "No repeated calls while stationary")
-check(!gate.ready(x: 50, y: 10, now: 3), "Movement resets")
-check(gate.ready(x: 50, y: 10, now: 4), "New dwell")
-gate.reset()
-check(!gate.ready(x: 50, y: 10, now: 5), "Explicit reset")
+for scalar in ["\u{0301}", "\u{200D}"] {
+    let oversized = "abc" + String(repeating: scalar, count: 4000)
+    check(oversized.count < 1800, "Regression payload uses few graphemes")
+    check(TextPolicy.candidate(oversized) == nil, "Bound Unicode bytes before processing")
+    rejects("Request boundary must also reject oversized Unicode") {
+        _ = try OpenRouter.request(text: oversized, key: "synthetic")
+    }
+}
+check(TextPolicy.candidate(String(repeating: " ", count: 7201) + "Hello") == nil, "Bound before trim")
 var cache = TranslationCache(limit: 2)
 cache.insert("一", for: "one"); cache.insert("二", for: "two"); cache.insert("三", for: "three")
 check(cache["one"] == nil && cache["two"] == "二", "Cache bounded")
@@ -69,4 +69,4 @@ redirectDelegate.urlSession(.shared, task: URLSession.shared.dataTask(with: req)
     completed.signal()
 }
 check(completed.wait(timeout: .now() + 1) == .success, "Resolve redirect decision")
-print("PASS: core checks — hover timing, bounds, cache, request privacy/cost, credentials, redirects, failure responses")
+print("PASS: core checks — Unicode bounds, cache, request privacy/cost, credentials, redirects, failure responses")

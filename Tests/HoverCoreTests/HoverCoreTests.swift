@@ -8,16 +8,13 @@ final class HoverCoreTests: XCTestCase {
         XCTAssertNil(TextPolicy.candidate("12345"))
         XCTAssertNil(TextPolicy.candidate(String(repeating: "a", count: 1801)))
     }
-    func testDwellIsOnceUntilMovement() {
-        var gate = HoverGate()
-        XCTAssertFalse(gate.ready(x: 10, y: 10, now: 0))
-        XCTAssertFalse(gate.ready(x: 11, y: 10, now: 0.5))
-        XCTAssertTrue(gate.ready(x: 10, y: 10, now: 0.8))
-        XCTAssertFalse(gate.ready(x: 10, y: 10, now: 2))
-        XCTAssertFalse(gate.ready(x: 50, y: 10, now: 3))
-        XCTAssertTrue(gate.ready(x: 50, y: 10, now: 4))
-        gate.reset()
-        XCTAssertFalse(gate.ready(x: 50, y: 10, now: 5))
+    func testUnicodeResourceBoundBeforeTrimming() {
+        for scalar in ["\u{0301}", "\u{200D}"] {
+            let source = "abc" + String(repeating: scalar, count: 4000)
+            XCTAssertLessThan(source.count, 1800)
+            XCTAssertNil(TextPolicy.candidate(source))
+        }
+        XCTAssertNil(TextPolicy.candidate(String(repeating: " ", count: 7201) + "Hello"))
     }
     func testCacheEvictsAndClears() {
         var cache = TranslationCache(limit: 2)

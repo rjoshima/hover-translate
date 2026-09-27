@@ -1,62 +1,109 @@
 import SwiftUI
 import AppKit
 
-@main struct HoverTranslateApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @StateObject private var model = AppModel()
-    var body: some Scene {
-        Window("Hover Translate", id: "settings") {
-            SettingsView(model: model)
-                .onAppear {
-                    DispatchQueue.main.async { AppDelegate.showSettingsWindow() }
-                }
-        }.defaultSize(width: 560, height: 640).windowResizability(.contentSize)
-        .defaultLaunchBehavior(model.hasKey ? .suppressed : .presented)
-        .restorationBehavior(.disabled)
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                OpenSettingsButton().keyboardShortcut(",", modifiers: .command)
-            }
-        }
-        MenuBarExtra("Hover Translate", systemImage: "character.bubble") {
-            Button(model.enabled ? "翻訳を停止" : "ホバー翻訳を開始") {
-                if model.enabled { model.stop() } else { model.start() }
-            }
-            OpenSettingsButton()
-            Divider()
-            Text(model.status)
-            Button("終了") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
-        }
+@main struct HoverTranslateApp {
+    @MainActor static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.regular)
+        withExtendedLifetime(delegate) { app.run() }
     }
 }
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+@MainActor final class TranslationStatusItem: NSObject {
+    private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let model: AppModel
+    private let openSettings: () -> Void
 
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        Self.showSettingsWindow()
-        return true
+    init(model: AppModel, openSettings: @escaping () -> Void) {
+        self.model = model
+        self.openSettings = openSettings
+        super.init()
+        if let button = item.button {
+            button.title = "訳"
+            button.font = .systemFont(ofSize: 14, weight: .semibold)
+            button.toolTip = "選択した文章を日本語に翻訳（右クリックで設定）"
+            button.setAccessibilityLabel("選択した文章を日本語に翻訳")
+            button.target = self
+            button.action = #selector(clicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
     }
+    @objc private func clicked() {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            let menu = NSMenu()
+            let settings = NSMenuItem(title: "設定を開く", action: #selector(settings), keyEquivalent: "")
+            settings.target = self; menu.addItem(settings)
+            let clear = NSMenuItem(title: "翻訳を閉じてキャッシュを消す", action: #selector(clear), keyEquivalent: "")
+            clear.target = self; menu.addItem(clear)
+            menu.addItem(.separator())
+            let quit = NSMenuItem(title: "終了", action: #selector(quit), keyEquivalent: "")
+            quit.target = self; menu.addItem(quit)
+            item.menu = menu
+            item.button?.performClick(nil)
+            item.menu = nil
+        } else if !model.hasKey {
+            openSettings()
+        } else {
+            model.translateSelection(at: NSEvent.mouseLocation)
+        }
+    }
+    @objc private func settings() { openSettings() }
+    @objc private func clear() { model.stop() }
+    @objc private func quit() { NSApp.terminate(nil) }
+}
 
-    static func showSettingsWindow() {
-        guard let window = NSApp.windows.first(where: {
-            $0.identifier?.rawValue == "settings" || $0.title == "Hover Translate"
-        }) else { return }
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let model = AppModel()
+    private var statusItem: TranslationStatusItem?
+    private var settingsWindow: NSWindow?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let mainMenu = NSMenu()
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Hover Translate")
+        let settings = NSMenuItem(title: "設定を開く", action: #selector(showSettings), keyEquivalent: ",")
+        settings.target = self; appMenu.addItem(settings)
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "終了", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu; mainMenu.addItem(appItem)
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: "編集")
+        for (title, action, key) in [("切り取り", "cut:", "x"), ("コピー", "copy:", "c"),
+                                     ("ペースト", "paste:", "v"), ("すべて選択", "selectAll:", "a")] {
+            editMenu.addItem(withTitle: title, action: Selector(action), keyEquivalent: key)
+        }
+        editItem.submenu = editMenu; mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
+        statusItem = TranslationStatusItem(model: model) { [weak self] in self?.showSettings() }
+        showSettings()
+    }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSettings(); return true
+    }
+    @objc func showSettings() {
+        if settingsWindow == nil {
+            let view = NSHostingView(rootView: ScrollView { SettingsView(model: model) })
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 576, height: 720),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                  backing: .buffered, defer: false)
+            window.title = "Hover Translate"
+            window.identifier = NSUserInterfaceItemIdentifier("settings")
+            window.isReleasedWhenClosed = false
+            window.minSize = NSSize(width: 560, height: 480)
+            window.contentView = view
+            window.center()
+            settingsWindow = window
+        }
+        guard let window = settingsWindow else { return }
         window.collectionBehavior.insert(.moveToActiveSpace)
         window.deminiaturize(nil)
         NSApp.unhide(nil)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-    }
-}
-
-struct OpenSettingsButton: View {
-    @Environment(\.openWindow) private var openWindow
-    var body: some View {
-        Button("設定を開く") {
-            openWindow(id: "settings")
-            DispatchQueue.main.async { AppDelegate.showSettingsWindow() }
-        }
     }
 }
 
@@ -71,7 +118,7 @@ struct SettingsView: View {
                 Image(systemName: "character.bubble.fill").font(.system(size: 36)).foregroundStyle(.mint)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Hover Translate").font(.title.bold())
-                    Text("英文の上でひと息。日本語がすぐそばに。").foregroundStyle(.secondary)
+                    Text("選択して「訳」。必要なときだけ日本語に。").foregroundStyle(.secondary)
                 }
             }
             GroupBox {
@@ -138,13 +185,13 @@ struct SettingsView: View {
                 }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
             }
             VStack(alignment: .leading, spacing: 8) {
-                Button(model.enabled ? "ホバー翻訳を停止" : "ホバー翻訳を開始") {
-                    if model.enabled { model.stop() } else { model.start() }
-                }.buttonStyle(.borderedProminent).tint(.teal).controlSize(.large).disabled(!model.hasKey)
+                Text("3  英文を選択して、メニューバーの「訳」を押す").font(.headline)
+                Text("コピーは不要です。ボタンを押したときだけ翻訳します。設定・終了は「訳」を右クリックしてください。")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text(model.status).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("GPT-4.1 nano · 本日あと\(model.remaining)回\n対象アプリでカーソルを止めた英文がOpenRouterと翻訳モデルの提供元に送られます。原文・訳の履歴は保存せず、終了するとキャッシュも消えます。")
+            Text("GPT-4.1 nano · 本日あと\(model.remaining)回\n「訳」を押したときの選択文だけがOpenRouterと翻訳モデルの提供元に送られます。自動送信・コピー監視・原文や訳の履歴保存はしません。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.padding(28).frame(width: 520)
     }
