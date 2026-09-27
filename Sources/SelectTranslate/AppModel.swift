@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
-import HoverCore
+import TranslationCore
 
 @MainActor final class AppModel: ObservableObject {
-    @Published var status = "APIキーを設定すると使えます。"
+    @Published var status = "英文を選択して、⌥ Option＋Tを押してください。"
     @Published var hasKey: Bool
     @Published var translated = ""
     @Published var demoBusy = false
@@ -87,7 +87,7 @@ import HoverCore
         displayedEngine = engine
         guard engine != .openRouter || hasKey else { showBubble(TranslationError.missingKey.localizedDescription, loading: false); return }
         guard AXIsProcessTrusted() else {
-            status = "Macのアクセシビリティ設定でHover Translateを許可してください。"
+            status = "Macのアクセシビリティ設定でSelect Translateを許可してください。"
             showBubble(status, loading: false); return
         }
         guard let source = NSWorkspace.shared.frontmostApplication,

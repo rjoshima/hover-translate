@@ -7,7 +7,7 @@ mkdir -p .build/keychain-check
 python3 - <<'PY'
 from pathlib import Path
 import uuid
-source = Path('Sources/HoverTranslate/KeyStore.swift').read_text()
+source = Path('Sources/SelectTranslate/KeyStore.swift').read_text()
 source = source.replace('jp.ryota.HoverTranslate.OpenRouter', 'jp.ryota.HoverTranslate.Test.' + uuid.uuid4().hex)
 Path('.build/keychain-check/KeyStore.swift').write_text(source)
 PY

@@ -1,7 +1,7 @@
 import XCTest
-@testable import HoverCore
+@testable import TranslationCore
 
-final class HoverCoreTests: XCTestCase {
+final class TranslationCoreTests: XCTestCase {
     func testEnglishOnlyAndBounds() {
         XCTAssertEqual(TextPolicy.candidate("  Hello world.\n"), "Hello world.")
         XCTAssertNil(TextPolicy.candidate("日本語の文章です。"))

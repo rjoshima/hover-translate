@@ -1,4 +1,4 @@
-# Hover Translate
+# Select Translate
 
 - Keep this a small native macOS utility with no third-party dependencies.
 - Translate only an explicitly selected English passage on Option+T (Apple on-device), or a deliberate menu-bar action. AI retranslation must require its own explicit action; never fall back to network automatically. No automatic hover trigger, clipboard monitoring, or screenshot capture.

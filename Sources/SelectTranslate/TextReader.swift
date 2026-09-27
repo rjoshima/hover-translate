@@ -1,10 +1,9 @@
 import AppKit
 import ApplicationServices
-import HoverCore
 
 @MainActor enum TextReader {
-    /// Electron documents this opt-in for assistive clients. Without it a hit test
-    /// may return only the browser container instead of the rendered text.
+    /// Electron documents this opt-in for assistive clients. It exposes the
+    /// focused element and selection through its accessibility tree.
     static func prepare(pid: pid_t, bundleID: String) {
         guard ["com.openai.codex", "com.anthropic.claudefordesktop"].contains(bundleID) else { return }
         let app = AXUIElementCreateApplication(pid)

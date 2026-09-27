@@ -2,6 +2,7 @@ import Foundation
 import Security
 
 @MainActor enum KeyStore {
+    // Legacy namespace retained across the Select Translate rename; never migrate the secret through files.
     private static let base: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: "jp.ryota.HoverTranslate.OpenRouter",

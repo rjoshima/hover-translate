@@ -1,12 +1,12 @@
 // swift-tools-version: 6.2
 import PackageDescription
 let package = Package(
-    name: "HoverTranslate",
+    name: "SelectTranslate",
     platforms: [.macOS("26.0")],
-    products: [.executable(name: "HoverTranslate", targets: ["HoverTranslate"])],
+    products: [.executable(name: "SelectTranslate", targets: ["SelectTranslate"])],
     targets: [
-        .target(name: "HoverCore"),
-        .executableTarget(name: "HoverTranslate", dependencies: ["HoverCore"]),
-        .testTarget(name: "HoverCoreTests", dependencies: ["HoverCore"])
+        .target(name: "TranslationCore"),
+        .executableTarget(name: "SelectTranslate", dependencies: ["TranslationCore"]),
+        .testTarget(name: "TranslationCoreTests", dependencies: ["TranslationCore"])
     ]
 )

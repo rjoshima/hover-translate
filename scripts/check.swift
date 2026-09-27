@@ -1,5 +1,5 @@
 import Foundation
-import HoverCore
+import TranslationCore
 
 func check(_ value: @autoclosure () -> Bool, _ message: String) {
     guard value() else { fatalError(message) }

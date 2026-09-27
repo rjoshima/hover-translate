@@ -28,7 +28,7 @@ public enum OpenRouter {
         r.timeoutInterval = 20
         r.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.setValue("Hover Translate", forHTTPHeaderField: "X-OpenRouter-Title")
+        r.setValue("Select Translate", forHTTPHeaderField: "X-OpenRouter-Title")
         r.httpBody = try JSONSerialization.data(withJSONObject: [
             "model": model,
             "messages": [

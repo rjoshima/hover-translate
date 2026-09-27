@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import Translation
 
-@main struct HoverTranslateApp {
+@main struct SelectTranslateApp {
     @MainActor static func main() {
         let app = NSApplication.shared
         let delegate = AppDelegate()
@@ -63,7 +63,7 @@ import Translation
     func applicationDidFinishLaunching(_ notification: Notification) {
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
-        let appMenu = NSMenu(title: "Hover Translate")
+        let appMenu = NSMenu(title: "Select Translate")
         let settings = NSMenuItem(title: "設定を開く", action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self; appMenu.addItem(settings)
         appMenu.addItem(.separator())
@@ -91,7 +91,7 @@ import Translation
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 576, height: 720),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable],
                                   backing: .buffered, defer: false)
-            window.title = "Hover Translate"
+            window.title = "Select Translate"
             window.identifier = NSUserInterfaceItemIdentifier("settings")
             window.isReleasedWhenClosed = false
             window.minSize = NSSize(width: 560, height: 480)
@@ -120,7 +120,7 @@ struct SettingsView: View {
             HStack(spacing: 14) {
                 Image(systemName: "character.bubble.fill").font(.system(size: 36)).foregroundStyle(.mint)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Hover Translate").font(.title.bold())
+                    Text("Select Translate").font(.title.bold())
                     Text("選択して⌥T。フルスクリーンでも日本語に。").foregroundStyle(.secondary)
                 }
             }
@@ -189,7 +189,7 @@ struct SettingsView: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("3  英文を読み取れるようにする").font(.headline)
-                    Text("アクセシビリティ設定で「Hover Translate」を許可します。画面録画やクリップボードの読み取りは使いません。")
+                    Text("アクセシビリティ設定で「Select Translate」を許可します。画面録画やクリップボードの読み取りは使いません。")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Button("Macのアクセス設定を開く") { model.openPermissions() }
                     Divider()
@@ -231,7 +231,7 @@ struct SettingsView: View {
                     .disabled(model.comparing || !model.appleReady || !model.hasKey)
                 if !model.comparison.isEmpty { Text(model.comparison).textSelection(.enabled).font(.callout) }
             }
-            Button("Hover Translateを終了") { NSApp.terminate(nil) }
+            Button("Select Translateを終了") { NSApp.terminate(nil) }
         }.padding(28).frame(width: 520)
     }
     private var runningApps: [NSRunningApplication] {
