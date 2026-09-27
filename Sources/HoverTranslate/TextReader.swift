@@ -3,6 +3,14 @@ import ApplicationServices
 import HoverCore
 
 @MainActor enum TextReader {
+    /// Electron documents this opt-in for assistive clients. Without it a hit test
+    /// may return only the browser container instead of the rendered text.
+    static func prepare(pid: pid_t, bundleID: String) {
+        guard ["com.openai.codex", "com.anthropic.claudefordesktop"].contains(bundleID) else { return }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.25)
+        _ = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+    }
     static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
@@ -27,7 +35,7 @@ import HoverCore
     }
     static func text(at point: CGPoint, pid: pid_t) -> String? {
         let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.15)
+        AXUIElementSetMessagingTimeout(app, 0.25)
         var hit: AXUIElement?
         guard AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) == .success,
               var current = hit else { return nil }
@@ -56,9 +64,13 @@ import HoverCore
                    let lineText = parameter(current, kAXStringForRangeParameterizedAttribute, range) as? String,
                    let candidate = TextPolicy.candidate(lineText) { return candidate }
             }
-            if [kAXStaticTextRole, kAXTextFieldRole].contains(role),
-               let value = attribute(current, kAXValueAttribute) as? String,
-               let candidate = TextPolicy.candidate(value) { return candidate }
+            if [kAXStaticTextRole, kAXTextFieldRole].contains(role) {
+                // Some rendered text nodes expose their text as a title, not a value.
+                for name in [kAXValueAttribute, kAXTitleAttribute] {
+                    if let value = attribute(current, name) as? String,
+                       let candidate = TextPolicy.candidate(value) { return candidate }
+                }
+            }
         }
         return nil
     }

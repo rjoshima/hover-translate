@@ -17,6 +17,7 @@ import HoverCore
     private var activePID: pid_t = 0
     private var lastPoint = NSPoint.zero
     private var lastRequest = Date.distantPast
+    private var retryAfter = Date.distantPast
     private var anchor = NSPoint.zero
     private var bubble: NSPanel?
     private let session: URLSession = {
@@ -79,6 +80,8 @@ import HoverCore
             status = "Macのアクセシビリティ設定でHover Translateを許可してください。"; return
         }
         enabled = true
+        activePID = 0
+        retryAfter = .distantPast
         gate.reset()
         status = "英文の上で0.7秒止めると翻訳します。"
         timer?.invalidate()
@@ -132,7 +135,13 @@ import HoverCore
         return result
     }
     private func tick() {
-        guard enabled, AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication,
+        guard enabled else { return }
+        guard AXIsProcessTrusted() else {
+            stop()
+            status = "読み取り許可が無効になりました。Macのアクセシビリティ設定を確認してください。"
+            return
+        }
+        guard let app = NSWorkspace.shared.frontmostApplication,
               let bundle = app.bundleIdentifier, targets.contains(bundle),
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
             dismiss(); gate.reset(); return
@@ -141,18 +150,25 @@ import HoverCore
         if let bubble, bubble.isVisible, bubble.frame.insetBy(dx: -6, dy: -6).contains(point) { return }
         if app.processIdentifier != activePID {
             dismiss(); gate.reset(); activePID = app.processIdentifier
+            TextReader.prepare(pid: app.processIdentifier, bundleID: bundle)
+            retryAfter = Date().addingTimeInterval(0.5)
         }
         if hypot(point.x - lastPoint.x, point.y - lastPoint.y) > 5 || NSEvent.pressedMouseButtons != 0 {
             dismiss(); gate.reset(); lastPoint = point
         }
-        guard NSEvent.pressedMouseButtons == 0,
+        guard NSEvent.pressedMouseButtons == 0, Date() >= retryAfter,
               gate.ready(x: point.x, y: point.y, now: Date.timeIntervalSinceReferenceDate),
               Date().timeIntervalSince(lastRequest) > 1.2 else { return }
         // AppKit coordinates have a bottom-left origin; Accessibility uses top-left on the main display.
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         let axPoint = CGPoint(x: point.x, y: top - point.y)
         guard let text = TextReader.text(at: axPoint, pid: app.processIdentifier) else {
-            status = "ここでは英文を取得できません。別の英文にカーソルを合わせてください。"; return
+            // Rendering/accessibility updates can finish after the first dwell.
+            // Retry locally without requiring the user to wiggle the cursor.
+            gate.reset()
+            retryAfter = Date().addingTimeInterval(1.2)
+            status = "英文を待っています。翻訳したい文章の上で少し止めてください。"
+            return
         }
         anchor = point
         lastRequest = Date()
