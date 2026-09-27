@@ -7,7 +7,15 @@ import AppKit
     var body: some Scene {
         Window("Hover Translate", id: "settings") {
             SettingsView(model: model)
+                .onAppear {
+                    DispatchQueue.main.async { AppDelegate.showSettingsWindow() }
+                }
         }.defaultSize(width: 560, height: 640).windowResizability(.contentSize)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                OpenSettingsButton().keyboardShortcut(",", modifiers: .command)
+            }
+        }
         MenuBarExtra("Hover Translate", systemImage: "character.bubble") {
             Button(model.enabled ? "翻訳を停止" : "ホバー翻訳を開始") {
                 if model.enabled { model.stop() } else { model.start() }
@@ -22,12 +30,31 @@ import AppKit
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        Self.showSettingsWindow()
+        return true
+    }
+
+    static func showSettingsWindow() {
+        guard let window = NSApp.windows.first(where: {
+            $0.identifier?.rawValue == "settings" || $0.title == "Hover Translate"
+        }) else { return }
+        window.collectionBehavior.insert(.moveToActiveSpace)
+        window.deminiaturize(nil)
+        NSApp.unhide(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
 }
 
 struct OpenSettingsButton: View {
     @Environment(\.openWindow) private var openWindow
     var body: some View {
-        Button("設定を開く") { openWindow(id: "settings"); NSApp.activate(ignoringOtherApps: true) }
+        Button("APIキーの設定を開く") {
+            openWindow(id: "settings")
+            DispatchQueue.main.async { AppDelegate.showSettingsWindow() }
+        }
     }
 }
 
