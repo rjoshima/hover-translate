@@ -42,4 +42,31 @@ rejects("Empty response must fail") { _ = try OpenRouter.parse(Data("{}".utf8), 
 let truncated = Data(#"{"choices":[{"message":{"content":"途中"},"finish_reason":"length"}]}"#.utf8)
 rejects("Truncated translation must not appear complete") { _ = try OpenRouter.parse(truncated, status: 200) }
 rejects("Empty key must fail") { _ = try OpenRouter.request(text: "Hello", key: "") }
-print("PASS: 23 checks — hover timing, text limits, cache, request privacy/cost, response failures")
+let examples = [
+    "Use sk-or-v1-" + String(repeating: "x", count: 24),
+    "github_pat_" + String(repeating: "a", count: 30),
+    "-----BEGIN PRIVATE KEY-----",
+    "API_KEY=synthetic_value_only",
+    "Authorization: Bearer synthetic_bearer_token"
+]
+for source in examples {
+    check(TextPolicy.candidate(source) == nil, "Block recognizable credentials")
+    rejects("Direct requests must also block credentials") { _ = try OpenRouter.request(text: source, key: "synthetic") }
+}
+check(TextPolicy.candidate("Please reset your password using the account settings.") != nil, "Allow normal prose about passwords")
+check(provider["zdr"] as? Bool == true, "Require zero retention endpoints")
+rejects("Direct requests must enforce the size bound") {
+    _ = try OpenRouter.request(text: String(repeating: "a", count: 1801), key: "synthetic")
+}
+let redirectDelegate = NoRedirectDelegate()
+let redirect = HTTPURLResponse(url: OpenRouter.endpoint, statusCode: 307, httpVersion: nil, headerFields: nil)!
+let destination = URLRequest(url: URL(string: "https://example.invalid/collect")!)
+let completed = DispatchSemaphore(value: 0)
+// This task is never resumed: the redirect policy test sends no network traffic.
+redirectDelegate.urlSession(.shared, task: URLSession.shared.dataTask(with: req),
+    willPerformHTTPRedirection: redirect, newRequest: destination) { follow in
+    precondition(follow == nil, "Never follow redirects with source text or API authorization")
+    completed.signal()
+}
+check(completed.wait(timeout: .now() + 1) == .success, "Resolve redirect decision")
+print("PASS: core checks — hover timing, bounds, cache, request privacy/cost, credentials, redirects, failure responses")

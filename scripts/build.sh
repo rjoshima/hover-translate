@@ -27,6 +27,6 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-codesign --force --sign - --identifier jp.ryota.HoverTranslate "$app"
+codesign --force --sign - --options runtime --identifier jp.ryota.HoverTranslate "$app"
 codesign --verify --strict "$app"
 printf '%s\n' "$app"

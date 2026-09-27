@@ -1,10 +1,11 @@
 import Foundation
 
 public enum TranslationError: Error, LocalizedError {
-    case missingKey, dailyLimit, http(Int), invalidResponse, truncated
+    case missingKey, unsafeText, dailyLimit, http(Int), invalidResponse, truncated
     public var errorDescription: String? {
         switch self {
         case .missingKey: "設定画面でOpenRouterのAPIキーを保存してください。"
+        case .unsafeText: "認証情報を含む可能性があるか、翻訳対象の範囲外のため送信しません。"
         case .dailyLimit: "本日の上限（500回）に達しました。明日また使えます。"
         case .http(401): "APIキーを確認してください。"
         case .http(402): "OpenRouterの残高またはキーの利用上限を確認してください。"
@@ -21,6 +22,7 @@ public enum OpenRouter {
     public static let endpoint = URL(string: "https://openrouter.ai/api/v1/chat/completions")!
     public static func request(text: String, key: String) throws -> URLRequest {
         guard !key.isEmpty else { throw TranslationError.missingKey }
+        guard TextPolicy.candidate(text) != nil else { throw TranslationError.unsafeText }
         var r = URLRequest(url: endpoint)
         r.httpMethod = "POST"
         r.timeoutInterval = 20
@@ -38,6 +40,7 @@ public enum OpenRouter {
             "stream": false,
             "provider": [
                 "data_collection": "deny",
+                "zdr": true,
                 "max_price": ["prompt": 0.10, "completion": 0.40]
             ]
         ])
@@ -59,5 +62,15 @@ public enum OpenRouter {
               !text.isEmpty else { throw TranslationError.invalidResponse }
         guard choice.finish_reason != "length" else { throw TranslationError.truncated }
         return text
+    }
+}
+
+/// A redirect must never forward a source paragraph or authorization to another endpoint.
+public final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+    public func urlSession(_ session: URLSession, task: URLSessionTask,
+                           willPerformHTTPRedirection response: HTTPURLResponse,
+                           newRequest request: URLRequest,
+                           completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }

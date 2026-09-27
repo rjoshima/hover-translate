@@ -23,7 +23,7 @@ import HoverCore
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil
         config.httpCookieStorage = nil
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: NoRedirectDelegate(), delegateQueue: nil)
     }()
 
     init() {
@@ -56,6 +56,7 @@ import HoverCore
         guard value.hasPrefix("sk-or-"), value.count > 20 else {
             status = "OpenRouterのAPIキーを入力してください。"; return false
         }
+        stop()
         do {
             try KeyStore.save(value)
             cache.clear()
@@ -119,7 +120,8 @@ import HoverCore
     private func translate(_ text: String, useCache: Bool = true) async throws -> String {
         if useCache, let cached = cache[text] { return cached }
         guard remaining > 0 else { throw TranslationError.dailyLimit }
-        guard let key = KeyStore.read() else { throw TranslationError.missingKey }
+        guard let key = try KeyStore.read() else { throw TranslationError.missingKey }
+        try Task.checkCancellation()
         let request = try OpenRouter.request(text: text, key: key)
         // Count attempts before sending: failures and cancellation never create unlimited retries.
         UserDefaults.standard.set(500 - remaining + 1, forKey: "calls")

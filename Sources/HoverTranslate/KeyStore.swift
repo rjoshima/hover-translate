@@ -5,7 +5,11 @@ import Security
     private static let base: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: "jp.ryota.HoverTranslate.OpenRouter",
-        kSecAttrAccount as String: "api-key"
+        kSecAttrAccount as String: "api-key",
+        // This ad-hoc signed personal build uses the login keychain and its app ACL.
+        // Synchronizable/data-protection items require properly provisioned signing.
+        kSecUseDataProtectionKeychain as String: false,
+        kSecAttrSynchronizable as String: false
     ]
     /// Check metadata only; do not read or display the secret during launch.
     static func isConfigured() -> Bool {
@@ -19,31 +23,37 @@ import Security
         // A locked/unavailable keychain must not make a saved key look deleted.
         return UserDefaults.standard.bool(forKey: "hasKey")
     }
-    static func read() -> String? {
+    static func read() throws -> String? {
         var query = base
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else { throw Failure(status: status, operation: "読み取り") }
+        guard let data = item as? Data, let key = String(data: data, encoding: .utf8), !key.isEmpty else {
+            throw Failure(status: errSecDecode, operation: "読み取り")
+        }
+        return key
     }
     static func save(_ key: String) throws {
         let attributes: [String: Any] = [kSecValueData as String: Data(key.utf8)]
         let status = SecItemUpdate(base as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
-            var query = base.merging(attributes) { _, new in new }
-            query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            let query = base.merging(attributes) { _, new in new }
             let added = SecItemAdd(query as CFDictionary, nil)
             guard added == errSecSuccess else { throw Failure(status: added) }
         } else if status != errSecSuccess { throw Failure(status: status) }
     }
     static func delete() throws {
         let status = SecItemDelete(base as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw Failure(status: status) }
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw Failure(status: status, operation: "削除") }
     }
     struct Failure: LocalizedError {
         let status: OSStatus
-        var errorDescription: String? { "キーチェーンに保存できませんでした（\(status)）。" }
+        var operation: String = "保存"
+        var errorDescription: String? {
+            "キーチェーンの\(operation)ができませんでした（\(status)）。Macのロックとアクセス許可を確認してください。"
+        }
     }
 }

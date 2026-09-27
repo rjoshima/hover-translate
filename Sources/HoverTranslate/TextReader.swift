@@ -31,8 +31,16 @@ import HoverCore
         var hit: AXUIElement?
         guard AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) == .success,
               var current = hit else { return nil }
-        // A few nearby ancestors handle inline spans. Never traverse a document tree.
+        // Check the nearby ancestors for secure fields before reading any text.
+        // Never traverse the document tree or collect sibling text.
+        var chain: [AXUIElement] = []
         for _ in 0..<4 {
+            if attribute(current, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole { return nil }
+            chain.append(current)
+            guard let parent = element(attribute(current, kAXParentAttribute)) else { break }
+            current = parent
+        }
+        for current in chain {
             let role = attribute(current, kAXRoleAttribute) as? String ?? ""
             let subrole = attribute(current, kAXSubroleAttribute) as? String ?? ""
             if subrole == kAXSecureTextFieldSubrole { return nil }
@@ -51,8 +59,6 @@ import HoverCore
             if [kAXStaticTextRole, kAXTextFieldRole].contains(role),
                let value = attribute(current, kAXValueAttribute) as? String,
                let candidate = TextPolicy.candidate(value) { return candidate }
-            guard let parent = element(attribute(current, kAXParentAttribute)) else { break }
-            current = parent
         }
         return nil
     }

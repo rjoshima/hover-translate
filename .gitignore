@@ -4,3 +4,9 @@ dist/
 .env
 .env.*
 *.xcuserstate
+
+# Signing credentials stay outside Git.
+*.p12
+*.p8
+*.mobileprovision
+*.provisionprofile
