@@ -1,12 +1,14 @@
 # Hover Translate
 
+[English](README.en.md) · 日本語 · [MIT License](LICENSE)
+
 英文を選択して **⌥ Option＋T** を押すと、Apple標準翻訳で日本語を表示する小さなMacアプリです。フルスクリーンでも使えます。必要なときだけ、訳の「AIで訳し直す（外部送信）」からOpenRouterを使えます。
 
 **試作段階です。Apple公証済みの配布アプリではありません。** 自動ホバー翻訳・コピー監視・常駐する画面内ボタンはありません。
 
 ## 使い方
 
-1. `scripts/build.sh` で `dist/Hover Translate.app` を作成し、Applicationsフォルダへコピーして起動します。
+1. 下の「新しいMacに導入する」の手順でビルドし、アプリを起動します。
 2. 設定の「Apple翻訳を準備」で英語・日本語を準備します。必要な場合のみ、macOSが言語データのダウンロードを案内します。
 3. 「Macのアクセス設定を開く」からHover Translateのアクセシビリティを許可します。
 4. CodexまたはClaudeで英文を選択し、**Optionを押しながらT**。コピーやメニューバー操作は不要です。訳を閉じるには吹き出しの×を押します。
@@ -36,9 +38,29 @@ Option+Tは対象アプリが手前のときだけ登録します。Command+Tは
 
 料金：[OpenRouter GPT-4.1 nano](https://openrouter.ai/openai/gpt-4.1-nano)
 
-## 開発と別のMacでの利用
+## 新しいMacに導入する
 
-macOS 26 / Swift 6.2。第三者ライブラリ・サーバーは不要です。
+**macOS 26以降・Swift 6.2以降のCommand Line Toolsが必要です。** 現在はソースからビルドする試作版です。第三者ライブラリ・サーバーは不要です。画面の表示は日本語で、翻訳方向は英語→日本語です。
+
+Command Line Toolsがない場合は、先にターミナルで `xcode-select --install` を実行し、Appleのインストール画面を完了してください。その後：
+
+```sh
+mkdir -p ~/Projects
+cd ~/Projects
+git clone https://github.com/rjoshima/hover-translate.git
+cd hover-translate
+./scripts/check.sh
+./scripts/build.sh
+open dist
+```
+
+Finderに表示された **Hover Translate.app** を自分の「アプリケーション」フォルダ（`~/Applications`。なければ作成）へコピーし、そのコピーを開きます。更新時は、動作中のHover Translateを設定画面から終了してから置き換えてください。アクセシビリティには、ビルド用のdistフォルダではなく、このインストール先のアプリを登録します。
+
+新しいMacでは「Apple翻訳を準備」とアクセシビリティ許可をもう一度行います。Apple翻訳だけならAPIキーの移行は不要です。対象アプリの設定もMacごとに選び直します。AIを使う場合だけ、そのMacのアプリ内入力欄からキーを保存してください。
+
+## 構成と開発
+
+単独のスクリプトではなく、Swift / AppKit / SwiftUIで作った常駐Macアプリです。スクリプトはビルドと検証に使います。Apple翻訳と任意のAI翻訳は同じアプリにまとめ、翻訳処理を分離しています。選択文の取得・ショートカット・表示・許可処理を共有でき、Apple利用者にAPI設定を必須にしません。名前はHover Translateですが、現在は明示的な選択操作でのみ翻訳します。
 
 ```sh
 ./scripts/check.sh
@@ -68,4 +90,6 @@ Claudeをフルスクリーンにし、設定説明の英文を選択してOptio
 
 ## ライセンス
 
-MIT。OpenAI、Anthropic、OpenRouterとは独立した非公式プロジェクトです。
+MIT。Appleの翻訳モデルやOSのコードは同梱・再配布しません。Apple、OpenAI、Anthropic、OpenRouterとは独立した非公式プロジェクトです。
+
+変更を提案する場合は [CONTRIBUTING.md](CONTRIBUTING.md)、脆弱性の報告は [SECURITY.md](SECURITY.md) を参照してください。
