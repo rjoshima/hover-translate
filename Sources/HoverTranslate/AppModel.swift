@@ -173,12 +173,18 @@ import HoverCore
             bubble = panel
         }
         guard let bubble else { return }
-        let view = NSHostingView(rootView: BubbleView(text: text, loading: loading))
-        let size = view.fittingSize
         let screen = NSScreen.screens.first { $0.frame.contains(anchor) } ?? NSScreen.main!
         let frame = screen.visibleFrame
         let width = min(390, frame.width - 24)
-        let height = min(max(size.height, 78), min(430, frame.height - 24))
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 5
+        let measured = (text as NSString).boundingRect(
+            with: NSSize(width: width - 32, height: 10_000),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: NSFont.systemFont(ofSize: 14), .paragraphStyle: paragraph]
+        ).height
+        let height = min(max(ceil(measured) + 70, 100), min(430, frame.height - 24))
+        let view = NSHostingView(rootView: BubbleView(text: text, loading: loading, width: width, height: height))
         let x = max(frame.minX + 12, min(anchor.x + 12, frame.maxX - width - 12))
         let y = max(frame.minY + 12, min(anchor.y - height - 14, frame.maxY - height - 12))
         bubble.contentView = view
@@ -190,6 +196,8 @@ import HoverCore
 struct BubbleView: View {
     let text: String
     let loading: Bool
+    let width: CGFloat
+    let height: CGFloat
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
@@ -201,9 +209,9 @@ struct BubbleView: View {
             ScrollView {
                 Text(text).font(.system(size: 14)).lineSpacing(5)
                     .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 345)
+            }
         }
-        .padding(16).frame(width: 358)
+        .padding(16).frame(width: width, height: height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.primary.opacity(0.10)))
     }
