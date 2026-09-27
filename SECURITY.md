@@ -4,7 +4,7 @@ This is an experimental local macOS utility, not a notarized release.
 
 Security boundaries:
 
-- Only explicit menu-bar actions may read and submit selected text. Never add automatic capture, clipboard monitoring, or whole-document fallbacks.
+- Only explicit shortcut/menu actions may read selected text. Apple translation stays on device; sending the selected text to OpenRouter requires a separate explicit AI action. Never fall back to AI automatically. Never add automatic capture, clipboard monitoring, or whole-document fallbacks.
 - Keep API keys in the local macOS Keychain; never put them in source, preferences, fixtures, screenshots, issues, or logs.
 - Keep the fixed HTTPS endpoint, redirect refusal, input byte/character limits, attempt budget and provider privacy/price settings.
 - Target-app Accessibility labels, macOS permission enforcement, Keychain ACLs and provider policies remain external dependencies. A text filter is not a complete DLP system.

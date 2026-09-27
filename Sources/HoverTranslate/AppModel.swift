@@ -9,6 +9,14 @@ import HoverCore
     @Published var demoBusy = false
     @Published var targets: [String]
     private var cache = TranslationCache()
+    private var appleCache = TranslationCache()
+    private let apple = AppleTranslator()
+    @Published var appleReady = false
+    @Published var comparison = ""
+    @Published var comparing = false
+    @Published var shortcutStatus = "対象アプリが手前になると、ショートカットが有効になります。"
+    private var displayedEngine = TranslationEngine.apple
+    private var displayedSource: String?
     private var task: Task<Void, Never>?
     private var generation = 0
     private var anchor = NSPoint.zero
@@ -31,7 +39,8 @@ import HoverCore
             defaults.set(true, forKey: "claudeTargetAddedV1")
         }
         targets = configured
-        if hasKey { status = "英文を選択して、メニューバーの「訳」を押してください。" }
+        status = "英文を選択して、⌥ Option＋Tを押してください。"
+        Task { await refreshAppleAvailability() }
     }
 
     var remaining: Int {
@@ -69,13 +78,14 @@ import HoverCore
     }
     func stop() {
         dismiss()
-        cache.clear()
-        status = "英文を選択して、メニューバーの「訳」を押してください。"
+        cache.clear(); appleCache.clear()
+        status = "英文を選択して、⌥ Option＋Tを押してください。"
     }
-    func translateSelection(at point: NSPoint) {
+    func translateSelection(at point: NSPoint, using engine: TranslationEngine = .apple) {
         dismiss()
         anchor = point
-        guard hasKey else { showBubble(TranslationError.missingKey.localizedDescription, loading: false); return }
+        displayedEngine = engine
+        guard engine != .openRouter || hasKey else { showBubble(TranslationError.missingKey.localizedDescription, loading: false); return }
         guard AXIsProcessTrusted() else {
             status = "Macのアクセシビリティ設定でHover Translateを許可してください。"
             showBubble(status, loading: false); return
@@ -83,7 +93,7 @@ import HoverCore
         guard let source = NSWorkspace.shared.frontmostApplication,
               let bundle = source.bundleIdentifier, targets.contains(bundle),
               source.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-            status = "対象アプリの英文を選択してから「訳」を押してください。"
+            status = "対象アプリの英文を選択してから⌥Tを押してください。"
             showBubble(status, loading: false); return
         }
         let sourcePID = source.processIdentifier
@@ -99,26 +109,39 @@ import HoverCore
                 selected = TextReader.selectedText(pid: sourcePID)
             }
             guard let selected else {
-                status = "選択した英文を読み取れませんでした。短い文章を選択してから、もう一度「訳」を押してください。"
+                status = "選択した英文を読み取れませんでした。短い文章を選択してから、もう一度ショートカットを押してください。"
                 showBubble(status, loading: false); return
             }
             guard let text = TextPolicy.candidate(selected) else {
                 status = TranslationError.unsafeText.localizedDescription
                 showBubble(status, loading: false); return
             }
-            showBubble("翻訳中…", loading: true)
-            status = "選択した文章を翻訳中…"
-            do {
-                let result = try await translate(text)
-                guard !Task.isCancelled, revision == generation else { return }
-                showBubble(result, loading: false)
-                status = "翻訳しました。本日あと\(remaining)回。"
-            } catch {
-                guard !Task.isCancelled, revision == generation else { return }
-                status = error.localizedDescription
-                showBubble(status, loading: false)
-            }
+            displayedSource = text
+            await renderTranslation(text, engine: engine, revision: revision)
         }
+    }
+    private func renderTranslation(_ text: String, engine: TranslationEngine, revision: Int) async {
+        showBubble("翻訳中…", loading: true)
+        status = "選択した文章を翻訳中…"
+        do {
+            let clock = ContinuousClock.now
+            let result = try await translate(text, engine: engine)
+            guard !Task.isCancelled, revision == generation else { return }
+            showBubble(result, loading: false)
+            status = "\(engine.label) · \(elapsed(clock))秒\(engine == .openRouter ? " · 本日あと\(remaining)回" : " · API送信なし")"
+        } catch {
+            guard !Task.isCancelled, revision == generation else { return }
+            status = error.localizedDescription
+            showBubble(status, loading: false)
+        }
+    }
+    private func retryWithAI() {
+        guard let text = displayedSource else { return }
+        dismiss()
+        displayedSource = text
+        displayedEngine = .openRouter
+        let revision = generation
+        task = Task { await renderTranslation(text, engine: .openRouter, revision: revision) }
     }
     func openPermissions() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
@@ -139,12 +162,19 @@ import HoverCore
         task = Task {
             defer { demoBusy = false }
             do {
-                translated = try await translate("Hover over an English sentence to see the Japanese translation.", useCache: false)
+                translated = try await translate("Select an English sentence to see the Japanese translation.", engine: .openRouter, useCache: false)
                 status = "接続テスト成功。日本語の訳を確認してください。"
             } catch { status = error.localizedDescription }
         }
     }
-    private func translate(_ text: String, useCache: Bool = true) async throws -> String {
+    private func translate(_ text: String, engine: TranslationEngine, useCache: Bool = true) async throws -> String {
+        guard let bounded = TextPolicy.candidate(text) else { throw TranslationError.unsafeText }
+        if engine == .apple {
+            if useCache, let cached = appleCache[bounded] { return cached }
+            let result = try await apple.translate(bounded)
+            appleCache.insert(result, for: bounded)
+            return result
+        }
         if useCache, let cached = cache[text] { return cached }
         guard remaining > 0 else { throw TranslationError.dailyLimit }
         guard let key = try KeyStore.read() else { throw TranslationError.missingKey }
@@ -158,9 +188,50 @@ import HoverCore
         cache.insert(result, for: text)
         return result
     }
+    func refreshAppleAvailability() async { appleReady = await apple.isInstalled() }
+    private func elapsed(_ start: ContinuousClock.Instant) -> String {
+        let c = start.duration(to: .now).components
+        return String(format: "%.2f", Double(c.seconds) + Double(c.attoseconds) / 1e18)
+    }
+    func compareEngines() {
+        guard !comparing, appleReady, hasKey else { return }
+        stop()
+        comparing = true
+        comparison = "比較中… 公開のテスト文3件だけを使います。"
+        let revision = generation
+        task = Task {
+            defer { comparing = false }
+            let samples = [
+                "Select an English sentence to see the Japanese translation.",
+                "When safeguards flag a message, automatically switch to a different model to keep chatting. When off, your session will pause instead. Applies to cloud sessions.",
+                "Uncommitted changes will not be deleted. Run git status before switching branches."
+            ]
+            var rows: [String] = []
+            do {
+                for (index, text) in samples.enumerated() {
+                    var row = "例\(index + 1): \(text)"
+                    for engine in [TranslationEngine.apple, .openRouter] {
+                        try Task.checkCancellation()
+                        let start = ContinuousClock.now
+                        let result = try await translate(text, engine: engine, useCache: false)
+                        guard !Task.isCancelled, revision == generation else { return }
+                        row += "\n\(engine.label): \(elapsed(start))秒\n\(result)"
+                    }
+                    rows.append(row)
+                    comparison = rows.joined(separator: "\n\n")
+                }
+                status = "3例の比較が終わりました。アプリのキャッシュを使わない各1回の計測です。"
+            } catch {
+                guard !Task.isCancelled, revision == generation else { return }
+                status = "比較を中断しました。\(error.localizedDescription)"
+            }
+        }
+    }
     private func dismiss() {
         generation += 1
         task?.cancel(); task = nil
+        apple.cancel()
+        displayedSource = nil
         bubble?.orderOut(nil)
     }
     private func showBubble(_ text: String, loading: Bool) {
@@ -185,10 +256,11 @@ import HoverCore
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: NSFont.systemFont(ofSize: 14), .paragraphStyle: paragraph]
         ).height
-        let height = min(max(ceil(measured) + 70, 100), min(430, frame.height - 24))
-        let view = NSHostingView(rootView: BubbleView(text: text, loading: loading, width: width, height: height, onClose: { [weak self] in self?.dismiss() }))
+        let height = min(max(ceil(measured) + 105, 100), min(430, frame.height - 24))
+        let view = NSHostingView(rootView: BubbleView(text: text, loading: loading, width: width, height: height, engine: displayedEngine.label, onAI: displayedEngine == .apple && displayedSource != nil && !loading ? { [weak self] in self?.retryWithAI() } : nil, onClose: { [weak self] in self?.dismiss() }))
         let x = max(frame.minX + 12, min(anchor.x + 12, frame.maxX - width - 12))
-        let y = max(frame.minY + 12, min(anchor.y - height - 14, frame.maxY - height - 12))
+        let preferredY = anchor.y - height - 14 < frame.minY + 65 ? anchor.y + 42 : anchor.y - height - 14
+        let y = max(frame.minY + 12, min(preferredY, frame.maxY - height - 12))
         bubble.contentView = view
         bubble.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
         bubble.orderFrontRegardless()
@@ -200,12 +272,14 @@ struct BubbleView: View {
     let loading: Bool
     let width: CGFloat
     let height: CGFloat
+    let engine: String
+    let onAI: (() -> Void)?
     let onClose: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "character.bubble.fill").foregroundStyle(.mint)
-                Text("日本語").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("日本語 · \(engine)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
                 if loading { ProgressView().controlSize(.mini) }
                 Button(action: onClose) { Image(systemName: "xmark") }
@@ -215,6 +289,7 @@ struct BubbleView: View {
                 Text(text).font(.system(size: 14)).lineSpacing(5)
                     .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
+            if let onAI { Button("AIで訳し直す（外部送信）", action: onAI).font(.caption) }
         }
         .padding(16).frame(width: width, height: height)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))

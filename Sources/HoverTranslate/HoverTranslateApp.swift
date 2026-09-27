@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Translation
 
 @main struct HoverTranslateApp {
     @MainActor static func main() {
@@ -44,8 +45,6 @@ import AppKit
             item.menu = menu
             item.button?.performClick(nil)
             item.menu = nil
-        } else if !model.hasKey {
-            openSettings()
         } else {
             model.translateSelection(at: NSEvent.mouseLocation)
         }
@@ -58,6 +57,7 @@ import AppKit
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
     private var statusItem: TranslationStatusItem?
+    private var shortcuts: TranslationShortcuts?
     private var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -78,6 +78,7 @@ import AppKit
         editItem.submenu = editMenu; mainMenu.addItem(editItem)
         NSApp.mainMenu = mainMenu
         statusItem = TranslationStatusItem(model: model) { [weak self] in self?.showSettings() }
+        shortcuts = TranslationShortcuts(model: model)
         showSettings()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -112,18 +113,45 @@ struct SettingsView: View {
     @State private var key = ""
     @State private var editingKey = false
     @State private var showApps = false
+    @State private var preparation: TranslationSession.Configuration?
+    @State private var preparationStatus = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack(spacing: 14) {
                 Image(systemName: "character.bubble.fill").font(.system(size: 36)).foregroundStyle(.mint)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Hover Translate").font(.title.bold())
-                    Text("選択して「訳」。必要なときだけ日本語に。").foregroundStyle(.secondary)
+                    Text("選択して⌥T。フルスクリーンでも日本語に。").foregroundStyle(.secondary)
                 }
             }
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("1  OpenRouterにつなぐ").font(.headline)
+                    Text("1  Apple標準翻訳（通常はこちら）").font(.headline)
+                    Text("選択した英文をこのMacの中で翻訳します。APIキー・従量課金は不要です。")
+                        .font(.callout).foregroundStyle(.secondary)
+                    Button("Apple翻訳を準備") {
+                        preparationStatus = "準備中…"
+                        if preparation == nil {
+                            preparation = .init(source: AppleTranslator.source, target: AppleTranslator.target)
+                        } else { preparation?.invalidate() }
+                    }
+                    Text(preparationStatus.isEmpty ? "初回は言語データのダウンロードが必要な場合があります。" : preparationStatus)
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .translationTask(preparation) { session in
+                do {
+                    try await session.prepareTranslation()
+                    _ = try await session.translate("Hello world.")
+                    await model.refreshAppleAvailability()
+                    preparationStatus = "Apple翻訳の準備ができました。"
+                } catch {
+                    preparationStatus = "準備できませんでした。\(error.localizedDescription)"
+                }
+            }
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("2  AI翻訳（任意・OpenRouter）").font(.headline)
                     if !model.hasKey || editingKey {
                         HStack {
                             SecureField("OpenRouter APIキー", text: $key)
@@ -160,7 +188,7 @@ struct SettingsView: View {
             }
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("2  英文を読み取れるようにする").font(.headline)
+                    Text("3  英文を読み取れるようにする").font(.headline)
                     Text("アクセシビリティ設定で「Hover Translate」を許可します。画面録画やクリップボードの読み取りは使いません。")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Button("Macのアクセス設定を開く") { model.openPermissions() }
@@ -185,14 +213,25 @@ struct SettingsView: View {
                 }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("3  英文を選択して、メニューバーの「訳」を押す").font(.headline)
-                Text("コピーは不要です。ボタンを押したときだけ翻訳します。設定・終了は「訳」を右クリックしてください。")
+                Text("英文を選択 → ⌥ Option＋T").font(.headline)
+                Text("Optionキーを押しながらT。Claude・Codexが手前のときだけ有効で、フルスクリーンでも使えます。AI翻訳は訳の中の「AIで訳し直す」から選べます。コピーは不要です。右クリックの一覧には追加されません。")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(model.shortcutStatus).font(.callout).foregroundStyle(.secondary)
                 Text(model.status).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("GPT-4.1 nano · 本日あと\(model.remaining)回\n「訳」を押したときの選択文だけがOpenRouterと翻訳モデルの提供元に送られます。自動送信・コピー監視・原文や訳の履歴保存はしません。")
+            Text("AI: GPT-4.1 nano · 本日あと\(model.remaining)回\nApple翻訳は端末内で処理します。「AIで訳し直す」を押したときだけ選択文がOpenRouterとモデル提供元へ送られます。自動送信・コピー監視・原文や訳の履歴保存はありません。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                Text("品質と速度を比較").font(.headline)
+                Text("固定のテスト英文3件を両方で翻訳します。AIに送るのもこの3件だけです。各1回・アプリ内キャッシュなしで測定します。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button(model.comparing ? "比較中…" : "AppleとAIを比較（AI 3回）") { model.compareEngines() }
+                    .disabled(model.comparing || !model.appleReady || !model.hasKey)
+                if !model.comparison.isEmpty { Text(model.comparison).textSelection(.enabled).font(.callout) }
+            }
+            Button("Hover Translateを終了") { NSApp.terminate(nil) }
         }.padding(28).frame(width: 520)
     }
     private var runningApps: [NSRunningApplication] {
