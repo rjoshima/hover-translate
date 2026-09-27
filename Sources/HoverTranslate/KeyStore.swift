@@ -7,6 +7,18 @@ import Security
         kSecAttrService as String: "jp.ryota.HoverTranslate.OpenRouter",
         kSecAttrAccount as String: "api-key"
     ]
+    /// Check metadata only; do not read or display the secret during launch.
+    static func isConfigured() -> Bool {
+        var query = base
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecSuccess { return true }
+        if status == errSecItemNotFound { return false }
+        // A locked/unavailable keychain must not make a saved key look deleted.
+        return UserDefaults.standard.bool(forKey: "hasKey")
+    }
     static func read() -> String? {
         var query = base
         query[kSecReturnData as String] = true

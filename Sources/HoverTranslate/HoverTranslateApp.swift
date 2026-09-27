@@ -11,6 +11,8 @@ import AppKit
                     DispatchQueue.main.async { AppDelegate.showSettingsWindow() }
                 }
         }.defaultSize(width: 560, height: 640).windowResizability(.contentSize)
+        .defaultLaunchBehavior(model.hasKey ? .suppressed : .presented)
+        .restorationBehavior(.disabled)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 OpenSettingsButton().keyboardShortcut(",", modifiers: .command)
@@ -51,7 +53,7 @@ import AppKit
 struct OpenSettingsButton: View {
     @Environment(\.openWindow) private var openWindow
     var body: some View {
-        Button("APIキーの設定を開く") {
+        Button("設定を開く") {
             openWindow(id: "settings")
             DispatchQueue.main.async { AppDelegate.showSettingsWindow() }
         }
@@ -61,6 +63,7 @@ struct OpenSettingsButton: View {
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @State private var key = ""
+    @State private var editingKey = false
     @State private var showApps = false
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -74,18 +77,32 @@ struct SettingsView: View {
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("1  OpenRouterにつなぐ").font(.headline)
-                    HStack {
-                        SecureField(model.hasKey ? "保存済み（変更する場合のみ入力）" : "OpenRouter APIキー", text: $key)
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityLabel("OpenRouter APIキー")
-                        Button("保存") { model.saveKey(key); key = "" }.disabled(key.isEmpty)
+                    if !model.hasKey || editingKey {
+                        HStack {
+                            SecureField("OpenRouter APIキー", text: $key)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityLabel("OpenRouter APIキー")
+                            Button("保存") {
+                                if model.saveKey(key) { key = ""; editingKey = false }
+                            }.disabled(key.isEmpty)
+                            if model.hasKey {
+                                Button("キャンセル") { key = ""; editingKey = false }
+                            }
+                        }
+                    } else {
+                        HStack {
+                            Label("キーは保存済みです。再入力は不要です。", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.teal)
+                            Spacer()
+                            Button("変更") { editingKey = true }
+                        }
                     }
                     HStack {
                         Button(model.demoBusy ? "接続中…" : "接続テスト") { model.demo() }
                             .disabled(!model.hasKey || model.demoBusy)
                         if model.hasKey { Button("キーを削除", role: .destructive) { model.deleteKey() } }
                     }
-                    Text("キーはこのMacのキーチェーンに保存します。GitHubには入りません。")
+                    Text("キーはこのMacに保存します。iCloud同期はまだ未対応です。GitHubには入りません。")
                         .font(.caption).foregroundStyle(.secondary)
                     if !model.translated.isEmpty {
                         Text(model.translated).textSelection(.enabled).font(.callout)
@@ -137,7 +154,7 @@ struct SettingsView: View {
     }
     private var targetNames: String {
         model.targets.map { id in
-            (id == "com.openai.codex" ? "Codex" : NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.localizedName ?? id)
+            (id == "com.openai.codex" ? "Codex" : id == "com.anthropic.claudefordesktop" ? "Claude" : NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.localizedName ?? id)
         }.joined(separator: "、")
     }
 }

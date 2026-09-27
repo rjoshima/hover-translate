@@ -5,10 +5,10 @@ import HoverCore
 @MainActor final class AppModel: ObservableObject {
     @Published var enabled = false
     @Published var status = "APIキーを設定すると使えます。"
-    @Published var hasKey = UserDefaults.standard.bool(forKey: "hasKey")
+    @Published var hasKey: Bool
     @Published var translated = ""
     @Published var demoBusy = false
-    @Published var targets: [String] = UserDefaults.standard.stringArray(forKey: "targets") ?? ["com.openai.codex"]
+    @Published var targets: [String]
     private var gate = HoverGate()
     private var timer: Timer?
     private var cache = TranslationCache()
@@ -26,6 +26,20 @@ import HoverCore
         return URLSession(configuration: config)
     }()
 
+    init() {
+        let defaults = UserDefaults.standard
+        hasKey = KeyStore.isConfigured()
+        let claude = "com.anthropic.claudefordesktop"
+        var configured = defaults.stringArray(forKey: "targets") ?? ["com.openai.codex", claude]
+        if !defaults.bool(forKey: "claudeTargetAddedV1") {
+            if !configured.contains(claude) { configured.append(claude) }
+            defaults.set(configured, forKey: "targets")
+            defaults.set(true, forKey: "claudeTargetAddedV1")
+        }
+        targets = configured
+        if hasKey { status = "保存済みのキーを使います。メニューバーから翻訳を開始できます。" }
+    }
+
     var remaining: Int {
         refreshDay()
         return max(0, 500 - UserDefaults.standard.integer(forKey: "calls"))
@@ -37,18 +51,19 @@ import HoverCore
             UserDefaults.standard.set(0, forKey: "calls")
         }
     }
-    func saveKey(_ key: String) {
+    @discardableResult func saveKey(_ key: String) -> Bool {
         let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard value.hasPrefix("sk-or-"), value.count > 20 else {
-            status = "OpenRouterのAPIキーを入力してください。"; return
+            status = "OpenRouterのAPIキーを入力してください。"; return false
         }
         do {
             try KeyStore.save(value)
             cache.clear()
             hasKey = true
             UserDefaults.standard.set(true, forKey: "hasKey")
-            status = "キーを保存しました。接続テストができます。"
-        } catch { status = error.localizedDescription }
+            status = "キーを保存しました。次回から再入力は不要です。"
+            return true
+        } catch { status = error.localizedDescription; return false }
     }
     func deleteKey() {
         stop()
